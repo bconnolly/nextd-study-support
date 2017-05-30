@@ -13,12 +13,13 @@
 
 --Make sure patient info from Table 1 exists (currently using a small subset of 24 patients).
 select * from each_med_obs emo;
+select * from FinalStatTable;
 --Use emo.meddate as first encounter date for now.
 --I don't expect this or any data depending on this to be very accurate until Table 1 is done.
 --Until then, days_from_first_enc will often return negative numbers.
 
 ---------- Table 2 - Demographic Variables ----------
---select count(*) from PCORNET_CDM_C2R2.DEMOGRAPHIC demo;
+--select count(*) from "&&PCORNET_CDM".DEMOGRAPHIC demo;
 --2,260,014
 
 --drop table Demographic_Variables;
@@ -28,16 +29,17 @@ select demo.patid,
     extract(year from demo.birth_date) as birth_year, 
     extract(month from demo.birth_date) as birth_month,
     demo.sex, demo.race, demo.hispanic 
-    from PCORNET_CDM_C2R2.DEMOGRAPHIC demo
-    join each_med_obs emo
-    on demo.patid=emo.patid
-);
+    from "&&PCORNET_CDM".DEMOGRAPHIC demo
+    join FinalStatTable table1
+    on demo.patid=table1.patid
+);  --1.833 seconds
+
 
 --select count(*) from Demographic_Variables;
---24
+--554,167
 
 ---------- Table 3 - Crosswalk for Patients, Encounters and Dates ----------
---select count(*) from PCORNET_CDM_C2R2.ENCOUNTER enc;
+--select count(*) from "&&PCORNET_CDM".ENCOUNTER enc;
 --20,355,187
 
 --What kinds of encounters are we actually looking for?
@@ -47,18 +49,18 @@ create table Pat_Enc_Date as
 (
 select enc.patid, enc.encounterid, 
     substr(enc.admit_date, 4, 6) as admit_date, 
-    (round(enc.admit_date) - emo.meddate) as days_from_first_enc, 
+    (round(enc.admit_date) - table1.FirstVisit) as days_from_first_enc, 
     enc.enc_type, enc.facilityid
-    from PCORNET_CDM_C2R2.ENCOUNTER enc
-    join each_med_obs emo
-    on enc.patid=emo.patid
-);
+    from "&&PCORNET_CDM".ENCOUNTER enc
+    join FinalStatTable table1
+    on enc.patid=table1.patid
+);  --58.988 seconds
 
 --select count(*) from Pat_Enc_Date;
---1,931
+--18,726,616
 
 ---------- Table 4 - Prescription Medicines ----------
---select count(*) from PCORNET_CDM_C2R2.PRESCRIBING presc;
+--select count(*) from "&&PCORNET_CDM".PRESCRIBING presc;
 --62,258,988
 
 --drop table Prescription_Meds;
@@ -66,19 +68,19 @@ create table Prescription_Meds as
 (
 select presc.patid, presc.encounterid, presc.prescribingid, presc.rxnorm_cui,
     substr(presc.rx_order_date, 4, 6) as rx_order_date, 
-    (round(presc.rx_order_date) - emo.meddate) as days_from_first_enc,
+    (round(presc.rx_order_date) - table1.FirstVisit) as days_from_first_enc,
     presc.rx_providerid, presc.rx_days_supply, 
     (case when presc.rx_refills is null then 0 else presc.rx_refills end) as rx_refills
-    from PCORNET_CDM_C2R2.PRESCRIBING presc
-    join each_med_obs emo
-    on presc.patid=emo.patid
-);
-    
+    from "&&PCORNET_CDM".PRESCRIBING presc
+    join FinalStatTable table1
+    on presc.patid=table1.patid
+);  --186.723 seconds
+
 --select count(*) from Prescription_Meds; 
---12,035
+--60,111,003
 
 ---------- Table 5 - Vital Signs ----------
---select count(*) from PCORNET_CDM_C2R2.VITAL vital;
+--select count(*) from "&&PCORNET_CDM".VITAL vital;
 --23,167,183
 
 --drop table Vital_Signs;
@@ -86,16 +88,18 @@ create table Vital_Signs as
 (
 select vital.patid, vital.encounterid, vital.measure_date,
     substr(measure_date, 4, 6) as measure_date_noday,
-    (round(measure_date) - emo.meddate) as days_from_first_enc,
+    (round(measure_date) - table1.FirstVisit) as days_from_first_enc,
     vital.vitalid, vital.ht, vital.wt, 
     vital.systolic, vital.diastolic, vital.smoking
-    from PCORNET_CDM_C2R2.VITAL vital
-    join each_med_obs emo
-    on vital.patid=emo.patid
-);
+    from "&&PCORNET_CDM".VITAL vital
+    --For testing:
+    join (select * from FinalStatTable where rownum <= 100) table1
+    --join FinalStatTable table1
+    on vital.patid=table1.patid
+);  --81.444 seconds
 
 --select count(*) from Vital_Signs;
---4,255
+--21,990,667
 
 /*-- Smoking codes: 
 01 - current everyday smoker
@@ -109,6 +113,22 @@ select vital.patid, vital.encounterid, vital.measure_date,
 NI - no information 
 UN - unknown
 OT - other */
+
+with patient_month_initial as 
+    (select distinct patid, measure_date_noday from Vital_Signs)
+
+select * from (
+  select pm.patid, pm.measure_date_noday, vs.smoking
+  from Vital_Signs vs
+  join patient_month_initial pm
+    on vs.patid = pm.patid
+   and pm.measure_date_noday = vs.measure_date_noday
+)
+
+pivot(
+  count(smoking)
+  for smoking in ('01', '02', '03', '04', '05', '06', '07', '08', 'NI', 'UN', 'OT')
+);
 
 --Create a table to find smoking code counts for each patient/month combination
 --drop table patient_month_records;
@@ -291,7 +311,7 @@ select * from final_smoking_codes;
 select * from NEXTD_Vital_Signs;
 
 ---------- Table 6 - Lab Results ----------
---select count(*) from PCORNET_CDM_C2R2.LAB_RESULT_CM labs;
+--select count(*) from "&&PCORNET_CDM".LAB_RESULT_CM labs;
 --96,502,167
 
 --drop table Lab_Results;
@@ -299,13 +319,13 @@ create table Lab_Results as
 (
 select labs.patid, labs.encounterid, labs.lab_order_date, labs.lab_result_cm_id, 
     substr(labs.specimen_date, 4, 6) as specimen_date_noday, 
-    (round(labs.specimen_date) - emo.meddate) as days_from_first_enc, labs.specimen_date, emo.meddate,
+    (round(labs.specimen_date) - table1.FirstVisit) as days_from_first_enc, labs.specimen_date, table1.FirstVisit,
     labs.result_num, labs.result_unit, labs.lab_name, labs.lab_loinc
-    from PCORNET_CDM_C2R2.LAB_RESULT_CM labs
-    join each_med_obs emo
-    on labs.patid=emo.patid
+    from "&&PCORNET_CDM".LAB_RESULT_CM labs
+    join FinalStatTable table1
+    on labs.patid=table1.patid
     where labs.lab_loinc in (
-        select substr(c_basecode, length('LOINC: ')) from bconnolly.nextd_lab_review
+        select substr(c_basecode, length('LOINC: ')) from "&&user".nextd_lab_review
         where category in('Fasting Glucose', 'Random Glucose')
     )
     or labs.lab_name in ('A1C', 'LDL', 'CREATININE', 'CK', 'CK_MB', 'CK_MBI', 'TROP_I', 'TROP_T_QL', 'TROP_T_QN', 'HGB')
@@ -314,20 +334,20 @@ select labs.patid, labs.encounterid, labs.lab_order_date, labs.lab_result_cm_id,
 --select count(*) from Lab_Results;
 --1,337
 
-select distinct labs.lab_name from PCORNET_CDM_C2R2.LAB_RESULT_CM labs;
+select distinct labs.lab_name from "&&PCORNET_CDM".LAB_RESULT_CM labs;
 
-select substr(c_basecode, length('LOINC: ')) from bconnolly.nextd_lab_review
+select substr(c_basecode, length('LOINC: ')) from "&&user".nextd_lab_review
 where category = 'Fasting Glucose';
 --A1c
 --Fasting Glucose
 --Random Glucose
 
-select labs.lab_name, count(*) from PCORNET_CDM_C2R2.LAB_RESULT_CM labs
+select labs.lab_name, count(*) from "&&PCORNET_CDM".LAB_RESULT_CM labs
 where labs.lab_name is not null
 group by labs.lab_name;
 
 ---------- Table 7 - Non-Urgent Visits ----------
---select count(*) from PCORNET_CDM_C2R2.PROCEDURES proc;
+--select count(*) from "&&PCORNET_CDM".PROCEDURES proc;
 --23,731,186
 
 --drop table Non_Urgent_Visits;
@@ -339,13 +359,13 @@ select proc.patid, proc.encounterid, proc.enc_type,
     (row_number() over (partition by proc.patid, proc.admit_date order by proc.admit_date desc)) as admit_date_orderNumber, --not sure if this is correctly set up
     proc.proceduresid, proc.px, proc.px_type, 
     substr(proc.px_date, 4, 6) as px_date,
-    (round(proc.px_date) - emo.meddate) as days_from_first_enc, 
+    (round(proc.px_date) - table1.FirstVisit) as days_from_first_enc, 
     diag.diagnosisid, diag.dx, diag.dx_type 
-    from PCORNET_CDM_C2R2.PROCEDURES proc
-    join PCORNET_CDM_C2R2.DIAGNOSIS diag
+    from "&&PCORNET_CDM".PROCEDURES proc
+    join "&&PCORNET_CDM".DIAGNOSIS diag
     on proc.patid=diag.patid
-    join each_med_obs emo
-    on proc.patid=emo.patid
+    join FinalStatTable table1
+    on proc.patid=table1.patid
     where ( proc.px_type in ('C3', 'C4', 'CH') and proc.px in ('99385', '99386', '99387', '99395', '99396', '99397') )
     or ( proc.px_type in ('10') and proc.px in ('Z00.00', 'Z00.01') )
     or ( proc.px_type in ('09') and proc.px in ('V70.0' /* could be listed incorrectly as: 'V70', 'V70.00' */, 'V72.31' ) )
@@ -358,7 +378,7 @@ select proc.patid, proc.encounterid, proc.enc_type,
 --1,477
 
 ---------- Table 8 - Immunizations ----------
---select count(*) from PCORNET_CDM_C2R2.PROCEDURES proc;
+--select count(*) from "&&PCORNET_CDM".PROCEDURES proc;
 --23,731,186
 
 --drop table Immunizations;
@@ -366,13 +386,13 @@ create table Immunizations as
 (
 select proc.patid, proc.encounterid, proc.proceduresid, proc.px, proc.px_type, 
     substr(proc.px_date, 4, 6) as px_date,
-    (round(proc.px_date) - emo.meddate) as days_from_first_enc,
+    (round(proc.px_date) - table1.FirstVisit) as days_from_first_enc,
     diag.diagnosisid, diag.admit_date, diag.dx, diag.dx_type
-    from PCORNET_CDM_C2R2.PROCEDURES proc
-    join PCORNET_CDM_C2R2.DIAGNOSIS diag
+    from "&&PCORNET_CDM".PROCEDURES proc
+    join "&&PCORNET_CDM".DIAGNOSIS diag
     on proc.patid=diag.patid
-    join each_med_obs emo
-    on proc.patid=emo.patid
+    join FinalStatTable table1
+    on proc.patid=table1.patid
     where ( proc.px_type in ('C3', 'C4', 'CH') and proc.px in ('G0245', 'G0246', 'G0247') )
     or ( proc.px_type in ('10') and proc.px in ('Z01.00', 'Z01.01', 'Z01.110', 'Z01.10', 'Z01.118', 'Z04.8') )
     or ( proc.px_type in ('09') and proc.px in ('V72.85') )
@@ -389,7 +409,7 @@ select proc.patid, proc.encounterid, proc.proceduresid, proc.px, proc.px_type,
 
 
 ---------- Table 10 - Diagnoses ----------
---select count(*) from PCORNET_CDM_C2R2.DIAGNOSIS diag;
+--select count(*) from "&&PCORNET_CDM".DIAGNOSIS diag;
 --31,086,853
 
 --drop table Diagnoses;
@@ -397,14 +417,14 @@ create table Diagnoses as
 (
 select diag.patid, diag.encounterid, diag.diagnosisid, diag.pdx, diag.dx, diag.enc_type, 
     substr(diag.admit_date, 4, 6) as admit_date,
-    (round(diag.admit_date) - emo.meddate) as days_from_first_enc  
-    from PCORNET_CDM_C2R2.DIAGNOSIS diag
-    join each_med_obs emo
-    on diag.patid=emo.patid
+    (round(diag.admit_date) - table1.FirstVisit) as days_from_first_enc  
+    from "&&PCORNET_CDM".DIAGNOSIS diag
+    join FinalStatTable table1
+    on diag.patid=table1.patid
 );
 
 --select count(*) from Diagnoses;
 --5,746
 
---select distinct diag.pdx from PCORNET_CDM_C2R2.DIAGNOSIS diag; 
+--select distinct diag.pdx from "&&PCORNET_CDM".DIAGNOSIS diag; 
 --NI, P, and X
