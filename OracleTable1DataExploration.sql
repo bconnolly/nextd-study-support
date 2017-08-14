@@ -153,14 +153,14 @@ where death_date is not null;
 -- Some differences are over 1000 months. Why?
 select distinct(death_date) from Non_Temp_FST
 where round(months_between(death_date, firstvisit)) > 1000;
--- This only occurs when the death_date is 31-DEC-00.
+-- This only occurs when the death_date is 31-DEC-00 (Dec 31, 2100).
 
 -- Categorize death data for a Jupyter notebook pie chart
 select * from 
     (
     select 
         case when death_date is null then 0 --'None'
-        when round(months_between(death_date, firstvisit)) > 1000 then 2 --'Death Date is 21 DEC 2100'
+        when round(months_between(death_date, firstvisit)) > 1000 then 2 --'Death Date is 31 DEC 2100'
         when round(months_between(death_date, firstvisit)) < 0 then 3 --'Death Date before First Visit'
         else 1 /*'Normal'*/ end as Death_Description
         from Non_Temp_FST
@@ -186,7 +186,7 @@ select
 (select count(*) from Non_Temp_FST where numberofvisits > 200 ) as "x>200"
 from dual;
 
-/*
+
 select 
 (select count(*) from Non_Temp_FST where numberofvisits > 500 ) as "x>500",
 (select count(*) from Non_Temp_FST where numberofvisits <= 500 and numberofvisits > 400) as "500=>x>400",
