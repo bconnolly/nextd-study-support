@@ -40,6 +40,8 @@ PREGNANCYDATE_21 DATE
 ;
 -- Import data from csv file 
 
+
+
 ---- Approach 1 from https://informatics.gpcnetwork.org/trac/Project/ticket/544#comment:13 ----
 
 -- Link patient IDs to census tract
@@ -70,39 +72,7 @@ and z.state = gk.state
 and z.zip = gk.zip
 ;
 
----- Investigate quality of the data ----
 
-select count(*) from nextd_finalstattable;  -- ~554000 Rows
-select count(*) from patient_tract;         -- ~554000 Rows
-select count(*) from patient_tract
-where gtract_acs is null;                   -- ~389000 Rows (~70%)
-
--- Find patients with more than one tract ID associated with them
-select patid, count(patid) amount
-from patient_tract
-group by patid
-having count (patid) > 1;
-
--- Find the addresses related to the above discrepancies
-select target_fid, loc_name, address, match_addr, arc_address, city from mpc.geocoded_kumc
-where address in 
-    (
-    select distinct address from 
-        (
-        select add_line_1 || ' ' || add_line_2 address from patient_tract
-        where patid in 
-            (-- Patient IDs more than one tract ID associated with them
-            select patid from 
-                (
-                select patid, count(patid) amount
-                from patient_tract
-                group by patid
-                having count (patid) > 1
-                )
-            ) 
-        ) 
-    )
-;
 
 ---- Approach 2 from https://informatics.gpcnetwork.org/trac/Project/ticket/544#comment:13 ----
 
@@ -237,6 +207,7 @@ secondary_RUCA number
 ;
 -- Import from csv file with census tract data
 
+select * from census_data_tract;
 select count(*) from census_data_tract; -- ~74000 rows
 
 -- Link patient IDs to geocoded variables
@@ -253,4 +224,3 @@ on pt.gtract_acs = cdt.tractid
 alter table Status_Variables drop column tractid;
 
 select * from Status_Variables;
-
