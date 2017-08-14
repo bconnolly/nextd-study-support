@@ -179,6 +179,18 @@ order by numberofvisits desc;
 
 --Categorize visit counts for a Jupyter notebook
 select 
+(select count(*) from Non_Temp_FST where numberofvisits = 1) as "1 Visit",
+(select count(*) from Non_Temp_FST where numberofvisits = 2) as "2 Visits",
+(select count(*) from Non_Temp_FST where numberofvisits = 3) as "3 Visits",
+(select count(*) from Non_Temp_FST where numberofvisits = 4) as "4 Visits",
+(select count(*) from Non_Temp_FST where numberofvisits = 5) as "5 Visits",
+(select count(*) from Non_Temp_FST where numberofvisits = 6) as "6 Visits",
+(select count(*) from Non_Temp_FST where numberofvisits >= 7 and numberofvisits < 20) as "7 to 20 Visits",
+(select count(*) from Non_Temp_FST where numberofvisits > 20) as "More than 20 Visits"
+from dual;
+
+/*
+select 
 (select count(*) from Non_Temp_FST where numberofvisits <= 50 and numberofvisits > 0) as "50=>x>0",
 (select count(*) from Non_Temp_FST where numberofvisits <= 100 and numberofvisits > 50) as "100=>x>50",
 (select count(*) from Non_Temp_FST where numberofvisits <= 150 and numberofvisits > 100) as "150=>x>100",
